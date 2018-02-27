@@ -1,6 +1,8 @@
 # twirp-example
 
-This is an exmaple Twirp service for educational purposes.
+This is an exmaple Twirp service for educational purposes. Learn more about
+Twirp at its [website](https://twitchtv.github.io/twirp/docs/intro.html) or
+[repo](https://github.com/twitchtv/twirp).
 
 ## Try it out
 
@@ -37,3 +39,6 @@ In the server, something like this:
 received req svc="Haberdasher" method="MakeHat"
 response sent svc="Haberdasher" method="MakeHat" time="109.01µs"
 ```
+
+## License
+This library is licensed under the Apache 2.0 License.

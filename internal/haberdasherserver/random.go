@@ -21,13 +21,20 @@ import (
 	"github.com/twitchtv/twirp-example/rpc/haberdasher"
 )
 
+// New returns a new Haberdasher which returns random Hats of the requested
+// size.
 func New() *randomHaberdasher {
 	return new(randomHaberdasher)
 }
 
+// randomHaberdasher is our implementation of the generated
+// rpc/haberdasher.Haberdasher interface. This is where the real "business
+// logic" lives.
 type randomHaberdasher struct{}
 
 func (h *randomHaberdasher) MakeHat(ctx context.Context, size *haberdasher.Size) (*haberdasher.Hat, error) {
+	// When returning an error, it's best to use the error constructors defined in
+	// the Twirp package so that the client gets a well-structured error response.
 	if size.Inches <= 0 {
 		return nil, twirp.InvalidArgumentError("Inches", "I can't make a hat that small!")
 	}

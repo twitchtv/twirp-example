@@ -24,27 +24,34 @@ import (
 )
 
 func main() {
+	// Create a client capable of talking to a Haberdasher server running on
+	// localhost. This is a generated function call.
 	client := haberdasher.NewHaberdasherJSONClient("http://localhost:8080", &http.Client{})
 
 	var (
 		hat *haberdasher.Hat
 		err error
 	)
+
+	// Call the client's 'MakeHat' method, retrying up to five times.
 	for i := 0; i < 5; i++ {
 		hat, err = client.MakeHat(context.Background(), &haberdasher.Size{Inches: 12})
 		if err != nil {
+			// We got an error. Is it a twirp Error?
 			if twerr, ok := err.(twirp.Error); ok {
+				// Twirp errors support custom, arbitrary metadata. For example, a
+				// server could inform a client that a particular error is retryable.
 				if twerr.Meta("retryable") != "" {
-					// Log the error and go again.
 					log.Printf("got error %q, retrying", twerr)
 					continue
 				}
 			}
-			// This was some fatal error!
 			log.Fatal(err)
 		} else {
 			break
 		}
 	}
+
+	// Print out the response.
 	fmt.Printf("%+v\n", hat)
 }
