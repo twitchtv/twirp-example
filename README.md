@@ -8,7 +8,7 @@ Twirp at its [website](https://twitchtv.github.io/twirp/docs/intro.html) or
 
 First, download this repo with the Go tool:
 ```
-go get github.com/twitchtv/twirp-example
+go get github.com/twitchtv/twirp-example/...
 cd $GOPATH/src/github.com/twitchtv/twirp-example
 ```
 
