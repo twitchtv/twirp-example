@@ -25,7 +25,7 @@ import (
 var ctxKey = new(int)
 
 // LoggingHooks creates a new twirp.ServerHooks which logs requests as they are
-// routed to Twirp, and logs responses (including respons time) when they are
+// routed to Twirp, and logs responses (including response time) when they are
 // sent.
 //
 // This is a demonstration showing how you can use context accessors with hooks.
