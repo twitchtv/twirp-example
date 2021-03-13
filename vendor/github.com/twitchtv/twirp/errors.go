@@ -25,7 +25,7 @@
 //
 //     resp, err := twirpClient.RPCMethod(ctx, req)
 //     if err != nil {
-//         if twerr := err.(twirp.Error) {
+//         if twerr, ok := err.(twirp.Error); ok {
 //             switch twerr.Code() {
 //             case twirp.InvalidArgument:
 //                 log.Error("invalid argument "+twirp.Meta("argument"))
@@ -41,7 +41,12 @@
 //
 package twirp
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+)
 
 // Error represents an error in a Twirp service call.
 type Error interface {
@@ -65,6 +70,16 @@ type Error interface {
 
 	// Error returns a string of the form "twirp error <Type>: <Msg>"
 	Error() string
+}
+
+// WrapError allows Twirp errors to wrap other errors.
+// The wrapped error can be extracted later with (github.com/pkg/errors).Unwrap
+// or errors.Is from the standard errors package on Go 1.13+.
+func WrapError(twerr Error, err error) Error {
+	return &wrappedErr{
+		wrapper: twerr,
+		cause:   err,
+	}
 }
 
 // NewError is the generic constructor for a twirp.Error. The ErrorCode must be
@@ -111,25 +126,15 @@ func InternalError(msg string) Error {
 	return NewError(Internal, msg)
 }
 
-// InternalErrorWith is an easy way to wrap another error. It adds the
-// underlying error's type as metadata with a key of "cause", which can be
-// useful for debugging. Should be used in the common case of an unexpected
-// error returned from another API, but sometimes it is better to build a more
-// specific error (like with NewError(Unknown, err.Error()), for example).
-//
-// The returned error also has a Cause() method which will return the original
-// error, if it is known. This can be used with the github.com/pkg/errors
-// package to extract the root cause of an error. Information about the root
-// cause of an error is lost when it is serialized, so this doesn't let a client
-// know the exact root cause of a server's error.
+// InternalErrorWith makes an internal error, wrapping the original error and using it
+// for the error message, and with metadata "cause" with the original error type.
+// This function is used by Twirp services to wrap non-Twirp errors as internal errors.
+// The wrapped error can be extracted later with (github.com/pkg/errors).Unwrap
+// or errors.Is from the standard errors package on Go 1.13+.
 func InternalErrorWith(err error) Error {
-	msg := err.Error()
-	twerr := NewError(Internal, msg)
+	twerr := NewError(Internal, err.Error())
 	twerr = twerr.WithMeta("cause", fmt.Sprintf("%T", err)) // to easily tell apart wrapped internal errors from explicit ones
-	return &wrappedErr{
-		wrapper: twerr,
-		cause:   err,
-	}
+	return WrapError(twerr, err)
 }
 
 // ErrorCode represents a Twirp error type.
@@ -150,6 +155,11 @@ const (
 	// system (i.e. a malformed file name, required argument, number out of range,
 	// etc.).
 	InvalidArgument ErrorCode = "invalid_argument"
+
+	// Malformed indicates an error occurred while decoding the client's request.
+	// This may mean that the message was encoded improperly, or that there is a
+	// disagreement in message format between the client and server.
+	Malformed ErrorCode = "malformed"
 
 	// DeadlineExceeded means operation expired before completion. For operations
 	// that change the state of the system, this error may be returned even if the
@@ -178,8 +188,8 @@ const (
 	// credentials for the operation.
 	Unauthenticated ErrorCode = "unauthenticated"
 
-	// ResourceExhausted indicates some resource has been exhausted, perhaps a
-	// per-user quota, or perhaps the entire file system is out of space.
+	// ResourceExhausted indicates some resource has been exhausted or rate-limited,
+	// perhaps a per-user quota, or perhaps the entire file system is out of space.
 	ResourceExhausted ErrorCode = "resource_exhausted"
 
 	// FailedPrecondition indicates operation was rejected because the system is
@@ -239,6 +249,8 @@ func ServerHTTPStatusFromErrorCode(code ErrorCode) int {
 		return 500 // Internal Server Error
 	case InvalidArgument:
 		return 400 // BadRequest
+	case Malformed:
+		return 400 // BadRequest
 	case DeadlineExceeded:
 		return 408 // RequestTimeout
 	case NotFound:
@@ -252,7 +264,7 @@ func ServerHTTPStatusFromErrorCode(code ErrorCode) int {
 	case Unauthenticated:
 		return 401 // Unauthorized
 	case ResourceExhausted:
-		return 403 // Forbidden
+		return 429 // Too Many Requests
 	case FailedPrecondition:
 		return 412 // Precondition Failed
 	case Aborted:
@@ -317,11 +329,9 @@ func (e *twerr) Error() string {
 	return fmt.Sprintf("twirp error %s: %s", e.code, e.msg)
 }
 
-// wrappedErr fulfills the twirp.Error interface and the
-// github.com/pkg/errors.Causer interface. It exposes all the twirp error
-// methods, but root cause of an error can be retrieved with
-// (*wrappedErr).Cause. This is expected to be used with the InternalErrorWith
-// function.
+// wrappedErr is the error returned by twirp.InternalErrorWith(err), which is used by clients.
+// Implements Unwrap() to allow go 1.13+ errors.Is/As checks,
+// and Cause() to allow (github.com/pkg/errors).Unwrap.
 type wrappedErr struct {
 	wrapper Error
 	cause   error
@@ -338,4 +348,64 @@ func (e *wrappedErr) WithMeta(key string, val string) Error {
 		cause:   e.cause,
 	}
 }
-func (e *wrappedErr) Cause() error { return e.cause }
+func (e *wrappedErr) Unwrap() error { return e.cause } // for go1.13 + errors.Is/As
+func (e *wrappedErr) Cause() error  { return e.cause } // for github.com/pkg/errors
+
+// WriteError writes an HTTP response with a valid Twirp error format (code, msg, meta).
+// Useful outside of the Twirp server (e.g. http middleware).
+// If err is not a twirp.Error, it will get wrapped with twirp.InternalErrorWith(err)
+func WriteError(resp http.ResponseWriter, err error) error {
+	return writeError(resp, err)
+}
+
+// writeError writes Twirp errors in the response.
+func writeError(resp http.ResponseWriter, err error) error {
+	// Non-twirp errors are wrapped as Internal (default)
+	twerr, ok := err.(Error)
+	if !ok {
+		twerr = InternalErrorWith(err)
+	}
+
+	statusCode := ServerHTTPStatusFromErrorCode(twerr.Code())
+	respBody := marshalErrorToJSON(twerr)
+
+	resp.Header().Set("Content-Type", "application/json") // Error responses are always JSON
+	resp.Header().Set("Content-Length", strconv.Itoa(len(respBody)))
+	resp.WriteHeader(statusCode) // set HTTP status code and send response
+
+	_, writeErr := resp.Write(respBody)
+	if writeErr != nil {
+		return writeErr
+	}
+	return nil
+}
+
+// JSON serialization for errors
+type twerrJSON struct {
+	Code string            `json:"code"`
+	Msg  string            `json:"msg"`
+	Meta map[string]string `json:"meta,omitempty"`
+}
+
+// marshalErrorToJSON returns JSON from a twirp.Error, that can be used as HTTP error response body.
+// If serialization fails, it will use a descriptive Internal error instead.
+func marshalErrorToJSON(twerr Error) []byte {
+	// make sure that msg is not too large
+	msg := twerr.Msg()
+	if len(msg) > 1e6 {
+		msg = msg[:1e6]
+	}
+
+	tj := twerrJSON{
+		Code: string(twerr.Code()),
+		Msg:  msg,
+		Meta: twerr.MetaMap(),
+	}
+
+	buf, err := json.Marshal(&tj)
+	if err != nil {
+		buf = []byte("{\"type\": \"" + Internal + "\", \"msg\": \"There was an error but it could not be serialized into JSON\"}") // fallback
+	}
+
+	return buf
+}

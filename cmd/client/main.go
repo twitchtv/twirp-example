@@ -1,4 +1,4 @@
-// Copyright 2018 Twitch Interactive, Inc.  All Rights Reserved.
+// Copyright 2020 Twitch Interactive, Inc.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License"). You may not
 // use this file except in compliance with the License. A copy of the License is
@@ -26,7 +26,7 @@ import (
 func main() {
 	// Create a client capable of talking to a Haberdasher server running on
 	// localhost. This is a generated function call.
-	client := haberdasher.NewHaberdasherJSONClient("http://localhost:8080", &http.Client{})
+	client := haberdasher.NewHaberdasherProtobufClient("http://localhost:8080", &http.Client{})
 
 	var (
 		hat *haberdasher.Hat
