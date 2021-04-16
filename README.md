@@ -6,11 +6,10 @@ Twirp at its [website](https://twitchtv.github.io/twirp/docs/intro.html) or
 
 ## Try it out
 
-First, download this repo with the Go tool:
+First, download this repo with the Go tool and cd into the repository:
 
 ```
 go get github.com/twitchtv/twirp-example/...
-cd $GOPATH/src/github.com/twitchtv/twirp-example
 ```
 
 Make sure that your machine has `Make` installed.
