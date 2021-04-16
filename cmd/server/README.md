@@ -1,7 +1,6 @@
-# twirp example server #
+# twirp example server
 
-This binary is an example twirp server. It's meant mostly to be read
-and to be used in conjunction with the neighboring client binary.
+This is an example twirp server.
 
 When a request is made, the server will log the statsd messages it
 would have sent, so you'll see stuff like this:
